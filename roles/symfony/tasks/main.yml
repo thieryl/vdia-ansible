@@ -1,0 +1,86 @@
+##################################################
+### Install symfony
+- name: Download Symfony Installer
+  get_url:
+    url: "{{ symfony_url }}"
+    dest: "{{ symfony_dest }}"
+    mode: 777
+
+##################################################
+### Configure symfony project
+- name: Start project creation
+  debug:
+    msg: "test"
+
+- set_fact:
+    symfony_major_version: "4.3"
+
+- name: Check if project already exists
+  stat:
+    path: "/vagrant/test"
+  register: stat_project
+
+- name: Create project directory
+  file:
+    path: "/vagrant/test"
+    state: directory
+  become_user: root
+  when: stat_project.stat.exists == false
+
+### Symfony 3
+- name: Download symfony3 installer
+  get_url:
+    url: "{{ symfony_url }}"
+    dest: "{{ symfony_dest }}"
+    mode: 777
+  when: symfony_major_version == "3"
+
+- name: Create symfony3 project
+  command: symfony3 new test 4.3
+  args:
+    chdir: /vagrant
+  when: stat_project.stat.exists == false and symfony_major_version == "3"
+
+# Symfony 4
+- name: Create symfony4 project
+  composer:
+    command: create-project
+    arguments: symfony/skeleton /vagrant/test ~4.3
+    working_dir: /vagrant/test
+    prefer_dist: yes
+  environment:
+    APP_ENV: prod
+  become_user: vagrant
+  register: new_symfony_project
+  when: stat_project.stat.exists == false and symfony_major_version == "4"
+
+- name: Install composer
+  command: composer install --no-interaction
+  args:
+    chdir: "/vagrant/test"
+  become_user: vagrant
+  when: new_symfony_project.changed and symfony_major_version == "4"
+
+# Clean solution, but with problems on Linux hosts
+# - name: Install composer
+#   composer:
+#     command: install
+#     working_dir: /vagrant/{{ projectname }}
+#   become_user: vagrant
+#   when: new_symfony_project.changed
+
+##################################################
+### Configure nginx
+- name: Copy new virtual hosts file.
+  template:
+    src: nginx_project_vhost_symfony4.skel
+    dest: /etc/nginx/sites-available/test
+    force: no
+
+- name: Enable new virtual hosts file.
+  file:
+    src: /etc/nginx/sites-available/test
+    dest: /etc/nginx/sites-enabled/test
+    state: link
+  notify:
+    - restart nginx
